@@ -1,5 +1,7 @@
 # Planning Kanban
 
+Part of the tektek platform. Conventions and project list: `../tektek-platform/` (see `CLAUDE.md` and `projects.md` there).
+
 A simple kanban board for planning projects. Issues have a title, a description, a checklist, and labels (one per project, such as CRM or Product line optimization). Drag issues between columns, drag columns to reorder them, and filter by label.
 
 The board is the single file `index.html`. Your data is stored in a Neon database (project `tektek`), so it's the same on every device.
