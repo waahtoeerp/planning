@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning Kanban</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --text: #1d2330;
+    --muted: #6b7280;
+    --border: #e2e5ea;
+    --accent: #2563eb;
+    --danger: #dc2626;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1218;
+      --panel: #1a1f29;
+      --text: #e6e9ef;
+      --muted: #9aa3b2;
+      --border: #2c3442;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1218;
+    --panel: #1a1f29;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --border: #2c3442;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  header h1 { font-size: 20px; margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  button {
+    font: inherit;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--danger); }
+  button.small { font-size: 12px; padding: 3px 8px; }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 20px;
+  }
+  .filters .title { color: var(--muted); font-size: 13px; margin-right: 4px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    opacity: 0.55;
+    user-select: none;
+  }
+  .chip.active { opacity: 1; border-color: var(--text); }
+  .chip.clear { background: transparent; color: var(--text); border-color: var(--border); opacity: 1; }
+
+  .board {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(260px, 1fr);
+    gap: 14px;
+    padding: 0 20px 40px;
+    overflow-x: auto;
+    align-items: start;
+  }
+  .column {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 200px;
+    transition: background 0.15s;
+  }
+  .column.over { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+  .column-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 10px 6px 14px;
+  }
+  .column-head input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 6px;
+  }
+  .column-head input[type="text"]:hover,
+  .column-head input[type="text"]:focus { border-color: var(--border); background: var(--panel); outline: none; }
+  .count { color: var(--muted); font-size: 12px; }
+  .drop { padding: 4px 10px 10px; min-height: 120px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: grab;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  .card:active { cursor: grabbing; }
+  .card h3 { font-size: 15px; margin: 6px 0; }
+  .card .body { font-size: 13px; color: var(--muted); white-space: pre-wrap; margin: 6px 0; }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #fff;
+    margin-right: 4px;
+  }
+  .tasks { list-style: none; padding: 0; margin: 8px 0; }
+  .tasks li { margin: 4px 0; font-size: 13px; }
+  .tasks label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
+  .tasks .done { text-decoration: line-through; color: var(--muted); }
+  .progress { font-size: 12px; color: var(--muted); }
+  .card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .card-actions select {
+    width: auto;
+    margin-top: 0;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  .add-column {
+    border-style: dashed;
+    color: var(--muted);
+    min-height: 60px;
+    align-self: stretch;
+  }
+
+  dialog {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--text);
+    width: min(560px, 94vw);
+    padding: 20px;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+  dialog h2 { margin: 0 0 12px; font-size: 18px; }
+  dialog label.field { display: block; margin-bottom: 12px; font-size: 13px; color: var(--muted); }
+  input[type="text"], select, textarea {
+    width: 100%;
+    font: inherit;
+    font-size: 14px;
+    padding: 8px;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .checks label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 13px;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  .new-label-inline { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+  .new-label-inline input[type="text"] { margin-top: 0; flex: 1; }
+  .new-label-inline input[type="color"] { width: 40px; height: 34px; border: none; background: none; padding: 0; }
+  .task-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .task-row input[type="text"] { margin-top: 0; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .label-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .label-row input[type="text"] { margin-top: 0; flex: 1; }
+  .label-row input[type="color"] { width: 40px; height: 34px; border: none; background: none; padding: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
+
+  @media (max-width: 640px) {
+    .board { grid-auto-columns: 80vw; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Planning Kanban</h1>
+  <div class="actions">
+    <button id="btn-labels">Manage labels</button>
+    <button id="btn-export">Export JSON</button>
+    <button id="btn-import">Import JSON</button>
+    <input type="file" id="file-import" accept="application/json" hidden>
+    <button class="primary" id="btn-new">+ New issue</button>
+  </div>
+</header>
+
+<div class="filters" id="filters"></div>
+
+<main class="board" id="board"></main>
+
+<!-- Issue dialog -->
+<dialog id="issue-dialog">
+  <form id="issue-form" method="dialog">
+    <h2 id="issue-dialog-title">New issue</h2>
+
+    <label class="field">Title
+      <input type="text" id="f-title" required>
+    </label>
+
+    <label class="field">Column
+      <select id="f-status"></select>
+    </label>
+
+    <div class="field">
+      <span>Labels (projects)</span>
+      <div class="checks" id="f-labels"></div>
+      <div class="new-label-inline">
+        <input type="text" id="f-new-label" placeholder="New label name">
+        <input type="color" id="f-new-label-color" value="#7c3aed" title="Label color">
+        <button type="button" class="small" id="btn-add-label-inline">Add label</button>
+      </div>
+    </div>
+
+    <label class="field">Description
+      <textarea id="f-body"></textarea>
+    </label>
+
+    <div class="field">
+      <span>Checklist</span>
+      <div id="f-tasks" style="margin-top:6px"></div>
+      <button type="button" class="small" id="btn-add-task" style="margin-top:6px">+ Add item</button>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Labels dialog -->
+<dialog id="labels-dialog">
+  <h2>Labels / projects</h2>
+  <div id="labels-list"></div>
+  <form id="label-form" style="margin-top:14px; display:flex; gap:8px; align-items:center;">
+    <input type="text" id="new-label-name" placeholder="New label, e.g. Marketing" required>
+    <input type="color" id="new-label-color" value="#7c3aed" style="width:40px;height:34px;border:none;background:none;padding:0">
+    <button type="submit">Add</button>
+  </form>
+  <div class="dialog-actions">
+    <button type="button" id="btn-labels-close">Close</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const KEY = "planning-kanban-v1";
+  const DEFAULT_COLUMNS = [
+    { id: "backlog", name: "Backlog" },
+    { id: "in-progress", name: "In progress" },
+    { id: "in-review", name: "In review" },
+    { id: "ready", name: "Ready" },
+  ];
+
+  // ---------- state ----------
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+
+  function seed() {
+    const crm = uid(), plo = uid();
+    return {
+      columns: DEFAULT_COLUMNS.map((c) => ({ ...c })),
+      labels: [
+        { id: crm, name: "CRM", color: "#2563eb" },
+        { id: plo, name: "Product line optimization", color: "#16a34a" },
+      ],
+      issues: [
+        {
+          id: uid(), title: "Define sales pipeline stages", status: "in-progress",
+          labels: [crm], body: "Agree on the stages a lead goes through before a deal is closed.",
+          tasks: [
+            { id: uid(), text: "Interview two sales reps", done: true },
+            { id: uid(), text: "Draft stage list", done: false },
+            { id: uid(), text: "Review with team", done: false },
+          ],
+        },
+        {
+          id: uid(), title: "Find overlapping SKUs in product line", status: "ready",
+          labels: [plo], body: "",
+          tasks: [
+            { id: uid(), text: "Export current SKU list", done: false },
+            { id: uid(), text: "Group by customer segment", done: false },
+          ],
+        },
+        {
+          id: uid(), title: "Clean up duplicate contacts", status: "backlog",
+          labels: [crm], body: "", tasks: [],
+        },
+      ],
+    };
+  }
+
+  // Accepts saved or imported data. Data saved before columns were editable
+  // has fixed statuses (backlog/todo/doing/done); map them onto the new columns.
+  function normalize(data) {
+    if (!data || !Array.isArray(data.labels) || !Array.isArray(data.issues)) return null;
+    if (!Array.isArray(data.columns) || data.columns.length === 0) {
+      data.columns = DEFAULT_COLUMNS.map((c) => ({ ...c }));
+      const map = { backlog: "backlog", todo: "ready", doing: "in-progress", done: "in-review" };
+      data.issues.forEach((i) => { i.status = map[i.status] || "backlog"; });
+    }
+    const ids = data.columns.map((c) => c.id);
+    data.issues.forEach((i) => { if (!ids.includes(i.status)) i.status = ids[0]; });
+    return data;
+  }
+
+  function load() {
+    try {
+      return normalize(JSON.parse(localStorage.getItem(KEY)));
+    } catch (e) {
+      return null; // ignore broken storage
+    }
+  }
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+  }
+
+  let state = load() || seed();
+  const filter = new Set(); // label ids; empty = show all
+  let editingId = null;
+  let draftTasks = [];
+  let dragId = null;
+
+  const labelById = (id) => state.labels.find((l) => l.id === id);
+  const issueById = (id) => state.issues.find((i) => i.id === id);
+  const columnById = (id) => state.columns.find((c) => c.id === id);
+
+  // ---------- render ----------
+  function renderFilters() {
+    const chips = state.labels.map((l) => `
+      <span class="chip ${filter.has(l.id) ? "active" : ""}" data-filter="${l.id}"
+            style="background:${esc(l.color)}">${esc(l.name)}</span>`).join("");
+    document.getElementById("filters").innerHTML =
+      `<span class="title">Filter by project:</span>${chips}` +
+      (filter.size ? `<span class="chip clear" data-filter="__clear">Clear</span>` : "");
+  }
+
+  function cardHTML(i) {
+    const tags = i.labels.map((id) => {
+      const l = labelById(id);
+      return l ? `<span class="tag" style="background:${esc(l.color)}">${esc(l.name)}</span>` : "";
+    }).join("");
+    const total = i.tasks.length;
+    const done = i.tasks.filter((t) => t.done).length;
+    const tasks = total ? `
+      <ul class="tasks">
+        ${i.tasks.map((t) => `
+          <li><label>
+            <input type="checkbox" data-task="${t.id}" data-issue="${i.id}" ${t.done ? "checked" : ""}>
+            <span class="${t.done ? "done" : ""}">${esc(t.text)}</span>
+          </label></li>`).join("")}
+      </ul>
+      <div class="progress">${done}/${total} done</div>` : "";
+    const moveOptions = state.columns.map((c) =>
+      `<option value="${c.id}" ${c.id === i.status ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+    return `
+      <article class="card" draggable="true" data-id="${i.id}">
+        <div>${tags}</div>
+        <h3>${esc(i.title)}</h3>
+        ${i.body ? `<p class="body">${esc(i.body)}</p>` : ""}
+        ${tasks}
+        <div class="card-actions">
+          <select data-move="${i.id}" aria-label="Move to column">${moveOptions}</select>
+          <button class="small" data-action="edit" data-id="${i.id}">Edit</button>
+          <button class="small danger" data-action="delete" data-id="${i.id}">Delete</button>
+        </div>
+      </article>`;
+  }
+
+  function renderBoard() {
+    const visible = state.issues.filter((i) =>
+      filter.size === 0 || i.labels.some((id) => filter.has(id)));
+    const columns = state.columns.map((col) => {
+      const items = visible.filter((i) => i.status === col.id);
+      return `
+        <section class="column" data-status="${col.id}">
+          <div class="column-head">
+            <input type="text" data-col="${col.id}" value="${esc(col.name)}" aria-label="Column name">
+            <span class="count">${items.length}</span>
+            <button class="small danger" data-action="del-col" data-col="${col.id}" title="Delete column">✕</button>
+          </div>
+          <div class="drop">${items.map(cardHTML).join("")}</div>
+        </section>`;
+    }).join("");
+    document.getElementById("board").innerHTML =
+      columns + `<button class="add-column" data-action="add-col">+ Add column</button>`;
+  }
+
+  function render() {
+    renderFilters();
+    renderBoard();
+  }
+
+  // ---------- columns ----------
+  function addColumn() {
+    const name = prompt("Column name?");
+    if (!name || !name.trim()) return;
+    state.columns.push({ id: uid(), name: name.trim() });
+    save(); render();
+  }
+
+  function deleteColumn(id) {
+    const col = columnById(id);
+    if (!col) return;
+    if (state.columns.length <= 1) {
+      alert("Keep at least one column.");
+      return;
+    }
+    const others = state.columns.filter((c) => c.id !== id);
+    const moving = state.issues.filter((i) => i.status === id);
+    const msg = moving.length
+      ? `Delete "${col.name}"? Its ${moving.length} issue(s) will move to "${others[0].name}".`
+      : `Delete "${col.name}"?`;
+    if (!confirm(msg)) return;
+    moving.forEach((i) => { i.status = others[0].id; });
+    state.columns = others;
+    save(); render();
+  }
+
+  function renameColumn(id, name) {
+    const col = columnById(id);
+    if (!col) return;
+    const clean = name.trim();
+    if (clean) col.name = clean;
+    save(); render();
+  }
+
+  // ---------- board interactions ----------
+  const board = document.getElementById("board");
+
+  board.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === "add-col") return addColumn();
+    if (action === "del-col") return deleteColumn(btn.dataset.col);
+
+    const issue = issueById(btn.dataset.id);
+    if (!issue) return;
+    if (action === "edit") openIssue(issue.id);
+    if (action === "delete" && confirm(`Delete "${issue.title}"?`)) {
+      state.issues = state.issues.filter((i) => i.id !== issue.id);
+      save(); render();
+    }
+  });
+
+  board.addEventListener("change", (e) => {
+    const target = e.target;
+
+    if (target.matches("input[data-col]")) {
+      renameColumn(target.dataset.col, target.value);
+      return;
+    }
+
+    if (target.matches("select[data-move]")) {
+      const issue = issueById(target.dataset.move);
+      if (!issue) return;
+      issue.status = target.value;
+      save(); render();
+      return;
+    }
+
+    if (target.matches("input[data-task]")) {
+      const issue = issueById(target.dataset.issue);
+      const task = issue && issue.tasks.find((t) => t.id === target.dataset.task);
+      if (!task) return;
+      task.done = target.checked;
+      save(); renderBoard();
+    }
+  });
+
+  board.addEventListener("dblclick", (e) => {
+    const card = e.target.closest(".card");
+    if (card && !e.target.closest("button, input, label, select")) openIssue(card.dataset.id);
+  });
+
+  // drag and drop between columns
+  board.addEventListener("dragstart", (e) => {
+    const card = e.target.closest(".card");
+    if (!card) return;
+    dragId = card.dataset.id;
+    e.dataTransfer.setData("text/plain", dragId);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  board.addEventListener("dragover", (e) => {
+    const column = e.target.closest(".column");
+    if (!column || !dragId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    document.querySelectorAll(".column.over").forEach((c) => {
+      if (c !== column) c.classList.remove("over");
+    });
+    column.classList.add("over");
+  });
+  board.addEventListener("dragleave", (e) => {
+    const column = e.target.closest(".column");
+    if (column && !column.contains(e.relatedTarget)) column.classList.remove("over");
+  });
+  board.addEventListener("drop", (e) => {
+    const column = e.target.closest(".column");
+    const issue = issueById(dragId);
+    if (!column || !issue) return;
+    e.preventDefault();
+    issue.status = column.dataset.status;
+    dragId = null;
+    save(); render();
+  });
+  board.addEventListener("dragend", () => {
+    dragId = null;
+    document.querySelectorAll(".column.over").forEach((c) => c.classList.remove("over"));
+  });
+
+  // label filter chips
+  document.getElementById("filters").addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-filter]");
+    if (!chip) return;
+    if (chip.dataset.filter === "__clear") filter.clear();
+    else if (filter.has(chip.dataset.filter)) filter.delete(chip.dataset.filter);
+    else filter.add(chip.dataset.filter);
+    render();
+  });
+
+  // ---------- issue dialog ----------
+  const issueDialog = document.getElementById("issue-dialog");
+  const fTitle = document.getElementById("f-title");
+  const fStatus = document.getElementById("f-status");
+  const fLabels = document.getElementById("f-labels");
+  const fBody = document.getElementById("f-body");
+  const fTasks = document.getElementById("f-tasks");
+
+  function renderTaskEditor() {
+    fTasks.innerHTML = draftTasks.map((t, idx) => `
+      <div class="task-row">
+        <input type="checkbox" data-idx="${idx}" data-field="done" ${t.done ? "checked" : ""} title="Done">
+        <input type="text" data-idx="${idx}" data-field="text" value="${esc(t.text)}" placeholder="Checklist item">
+        <button type="button" class="small danger" data-remove="${idx}">✕</button>
+      </div>`).join("");
+  }
+
+  fTasks.addEventListener("input", (e) => {
+    const idx = Number(e.target.dataset.idx);
+    if (e.target.dataset.field === "text") draftTasks[idx].text = e.target.value;
+  });
+  fTasks.addEventListener("change", (e) => {
+    const idx = Number(e.target.dataset.idx);
+    if (e.target.dataset.field === "done") draftTasks[idx].done = e.target.checked;
+  });
+  fTasks.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-remove]");
+    if (!btn) return;
+    draftTasks.splice(Number(btn.dataset.remove), 1);
+    renderTaskEditor();
+  });
+  document.getElementById("btn-add-task").addEventListener("click", () => {
+    draftTasks.push({ id: uid(), text: "", done: false });
+    renderTaskEditor();
+    fTasks.querySelector(".task-row:last-child input[type=text]").focus();
+  });
+
+  function renderLabelChecks(selected) {
+    fLabels.innerHTML = state.labels.map((l) => `
+      <label>
+        <input type="checkbox" value="${l.id}" ${selected.includes(l.id) ? "checked" : ""}>
+        <span class="tag" style="background:${esc(l.color)}; margin:0">${esc(l.name)}</span>
+      </label>`).join("") || `<span class="hint">No labels yet. Add some via "Labels".</span>`;
+  }
+
+  // Create a label without leaving the issue dialog, and tick it for this issue.
+  const fNewLabel = document.getElementById("f-new-label");
+  function addInlineLabel() {
+    const name = fNewLabel.value.trim();
+    if (!name) return;
+    const id = uid();
+    const selected = [...fLabels.querySelectorAll("input:checked")].map((b) => b.value);
+    state.labels.push({ id, name, color: document.getElementById("f-new-label-color").value });
+    save();
+    fNewLabel.value = "";
+    renderLabelChecks([...selected, id]);
+    renderFilters();
+  }
+  document.getElementById("btn-add-label-inline").addEventListener("click", addInlineLabel);
+  fNewLabel.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); addInlineLabel(); } // don't submit the issue form
+  });
+
+  function openIssue(id, presetStatus) {
+    const issue = id ? issueById(id) : null;
+    editingId = issue ? issue.id : null;
+    document.getElementById("issue-dialog-title").textContent = issue ? "Edit issue" : "New issue";
+    fTitle.value = issue ? issue.title : "";
+    fStatus.innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+    fStatus.value = issue ? issue.status : (presetStatus || state.columns[0].id);
+    fBody.value = issue ? issue.body : "";
+    draftTasks = issue ? issue.tasks.map((t) => ({ ...t })) : [];
+    renderLabelChecks(issue ? issue.labels : []);
+    renderTaskEditor();
+    issueDialog.showModal();
+    fTitle.focus();
+  }
+
+  document.getElementById("btn-new").addEventListener("click", () => openIssue(null));
+  document.getElementById("btn-cancel").addEventListener("click", () => issueDialog.close());
+
+  document.getElementById("issue-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!fTitle.value.trim()) return;
+    const labels = [...fLabels.querySelectorAll("input:checked")].map((b) => b.value);
+    const tasks = draftTasks
+      .filter((t) => t.text.trim())
+      .map((t) => ({ id: t.id, text: t.text.trim(), done: !!t.done }));
+    const data = {
+      title: fTitle.value.trim(),
+      status: fStatus.value,
+      body: fBody.value.trim(),
+      labels,
+      tasks,
+    };
+    if (editingId) Object.assign(issueById(editingId), data);
+    else state.issues.push({ id: uid(), ...data });
+    save();
+    issueDialog.close();
+    render();
+  });
+
+  // ---------- labels dialog ----------
+  const labelsDialog = document.getElementById("labels-dialog");
+  const labelsList = document.getElementById("labels-list");
+
+  function renderLabelsList() {
+    labelsList.innerHTML = state.labels.map((l) => `
+      <div class="label-row" data-id="${l.id}">
+        <input type="color" value="${esc(l.color)}" data-field="color">
+        <input type="text" value="${esc(l.name)}" data-field="name">
+        <button type="button" class="small danger" data-delete="${l.id}">Delete</button>
+      </div>`).join("") || `<p class="hint">No labels yet.</p>`;
+  }
+
+  labelsList.addEventListener("input", (e) => {
+    const row = e.target.closest(".label-row");
+    const label = row && labelById(row.dataset.id);
+    if (!label) return;
+    label[e.target.dataset.field] = e.target.value;
+    save();
+    renderFilters(); renderBoard();
+  });
+
+  labelsList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-delete]");
+    if (!btn) return;
+    const label = labelById(btn.dataset.delete);
+    if (!label || !confirm(`Delete label "${label.name}"? It will be removed from all issues.`)) return;
+    state.labels = state.labels.filter((l) => l.id !== label.id);
+    state.issues.forEach((i) => { i.labels = i.labels.filter((id) => id !== label.id); });
+    filter.delete(label.id);
+    save(); renderLabelsList(); render();
+  });
+
+  document.getElementById("label-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = document.getElementById("new-label-name").value.trim();
+    if (!name) return;
+    state.labels.push({
+      id: uid(),
+      name,
+      color: document.getElementById("new-label-color").value,
+    });
+    document.getElementById("new-label-name").value = "";
+    save(); renderLabelsList(); render();
+  });
+
+  document.getElementById("btn-labels").addEventListener("click", () => {
+    renderLabelsList();
+    labelsDialog.showModal();
+  });
+  document.getElementById("btn-labels-close").addEventListener("click", () => labelsDialog.close());
+
+  // ---------- export / import ----------
+  document.getElementById("btn-export").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "planning-kanban.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  const fileImport = document.getElementById("file-import");
+  document.getElementById("btn-import").addEventListener("click", () => fileImport.click());
+  fileImport.addEventListener("change", async () => {
+    const file = fileImport.files[0];
+    if (!file) return;
+    let data = null;
+    try {
+      data = normalize(JSON.parse(await file.text()));
+    } catch (err) {
+      data = null;
+    }
+    if (data) {
+      state = data;
+      filter.clear();
+      save(); render();
+    } else {
+      alert("That file is not a valid planning kanban export.");
+    }
+    fileImport.value = "";
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
