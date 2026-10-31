@@ -33,6 +33,7 @@
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -54,7 +55,8 @@
     z-index: 2;
   }
   header h1 { font-size: 20px; margin: 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .who { font-size: 13px; color: var(--muted); }
 
   button {
     font: inherit;
@@ -67,9 +69,30 @@
     cursor: pointer;
   }
   button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.danger { color: var(--danger); }
   button.small { font-size: 12px; padding: 3px 8px; }
+
+  .signin {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 80px 20px;
+    text-align: center;
+  }
+  .signin p { color: var(--muted); margin: 0; max-width: 420px; }
+  .signin button { font-size: 16px; padding: 10px 18px; }
+
+  .status {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+    border: 1px solid var(--danger);
+    font-size: 14px;
+  }
 
   .filters {
     display: flex;
@@ -112,12 +135,14 @@
     transition: background 0.15s;
   }
   .column.over { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+  .column[draggable="true"] { opacity: 0.6; }
   .column-head {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 10px 10px 6px 14px;
   }
+  .col-handle { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; letter-spacing: -2px; }
   .column-head input[type="text"] {
     flex: 1;
     min-width: 0;
@@ -169,12 +194,7 @@
     justify-content: flex-end;
     align-items: center;
   }
-  .card-actions select {
-    width: auto;
-    margin-top: 0;
-    padding: 3px 6px;
-    font-size: 12px;
-  }
+  .card-actions select { width: auto; margin-top: 0; padding: 3px 6px; font-size: 12px; }
   .add-column {
     border-style: dashed;
     color: var(--muted);
@@ -237,18 +257,26 @@
 
 <header>
   <h1>Planning Kanban</h1>
-  <div class="actions">
+  <div class="actions" id="header-actions" hidden>
+    <span class="who" id="who"></span>
     <button id="btn-labels">Manage labels</button>
-    <button id="btn-export">Export JSON</button>
-    <button id="btn-import">Import JSON</button>
-    <input type="file" id="file-import" accept="application/json" hidden>
+    <button id="btn-signout">Sign out</button>
     <button class="primary" id="btn-new">+ New issue</button>
   </div>
 </header>
 
-<div class="filters" id="filters"></div>
+<div class="status" id="status" hidden></div>
 
-<main class="board" id="board"></main>
+<section class="signin" id="signin" hidden>
+  <h2>Sign in to see the board</h2>
+  <p>Only approved GitHub accounts can view or change the planning board.</p>
+  <button class="primary" id="btn-signin">Sign in with GitHub</button>
+</section>
+
+<section id="app" hidden>
+  <div class="filters" id="filters"></div>
+  <main class="board" id="board"></main>
+</section>
 
 <!-- Issue dialog -->
 <dialog id="issue-dialog">
@@ -306,89 +334,136 @@
 
 <script>
 (() => {
-  const KEY = "planning-kanban-v1";
-  const DEFAULT_COLUMNS = [
-    { id: "backlog", name: "Backlog" },
-    { id: "in-progress", name: "In progress" },
-    { id: "in-review", name: "In review" },
-    { id: "ready", name: "Ready" },
-  ];
+  // Neon Auth (sign-in) and Neon Data API (storage) for the tektek project.
+  const AUTH = "https://ep-silent-shadow-b9rx4q0d.neonauth.c-7.eu-central-1.aws.neon.tech/neondb/auth";
+  const API = "https://ep-silent-shadow-b9rx4q0d.apirest.c-7.eu-central-1.aws.neon.tech/neondb/rest/v1";
+  const DEFAULT_COLUMNS = ["Backlog", "In progress", "In review", "Ready"];
 
-  // ---------- state ----------
-  const uid = () => Math.random().toString(36).slice(2, 10);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
 
-  function seed() {
-    const crm = uid(), plo = uid();
-    return {
-      columns: DEFAULT_COLUMNS.map((c) => ({ ...c })),
-      labels: [
-        { id: crm, name: "CRM", color: "#2563eb" },
-        { id: plo, name: "Product line optimization", color: "#16a34a" },
-      ],
-      issues: [
-        {
-          id: uid(), title: "Define sales pipeline stages", status: "in-progress",
-          labels: [crm], body: "Agree on the stages a lead goes through before a deal is closed.",
-          tasks: [
-            { id: uid(), text: "Interview two sales reps", done: true },
-            { id: uid(), text: "Draft stage list", done: false },
-            { id: uid(), text: "Review with team", done: false },
-          ],
-        },
-        {
-          id: uid(), title: "Find overlapping SKUs in product line", status: "ready",
-          labels: [plo], body: "",
-          tasks: [
-            { id: uid(), text: "Export current SKU list", done: false },
-            { id: uid(), text: "Group by customer segment", done: false },
-          ],
-        },
-        {
-          id: uid(), title: "Clean up duplicate contacts", status: "backlog",
-          labels: [crm], body: "", tasks: [],
-        },
-      ],
-    };
-  }
-
-  // Accepts saved or imported data. Data saved before columns were editable
-  // has fixed statuses (backlog/todo/doing/done); map them onto the new columns.
-  function normalize(data) {
-    if (!data || !Array.isArray(data.labels) || !Array.isArray(data.issues)) return null;
-    if (!Array.isArray(data.columns) || data.columns.length === 0) {
-      data.columns = DEFAULT_COLUMNS.map((c) => ({ ...c }));
-      const map = { backlog: "backlog", todo: "ready", doing: "in-progress", done: "in-review" };
-      data.issues.forEach((i) => { i.status = map[i.status] || "backlog"; });
-    }
-    const ids = data.columns.map((c) => c.id);
-    data.issues.forEach((i) => { if (!ids.includes(i.status)) i.status = ids[0]; });
-    return data;
-  }
-
-  function load() {
-    try {
-      return normalize(JSON.parse(localStorage.getItem(KEY)));
-    } catch (e) {
-      return null; // ignore broken storage
-    }
-  }
-
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-  }
-
-  let state = load() || seed();
+  // Board data, loaded from the database.
+  let state = { columns: [], labels: [], issues: [] };
+  let token = null;
   const filter = new Set(); // label ids; empty = show all
   let editingId = null;
   let draftTasks = [];
+  let dragKind = null; // "issue" | "column"
   let dragId = null;
+  let dragColumnId = null;
 
   const labelById = (id) => state.labels.find((l) => l.id === id);
   const issueById = (id) => state.issues.find((i) => i.id === id);
   const columnById = (id) => state.columns.find((c) => c.id === id);
+
+  // ---------- messages ----------
+  let statusTimer = null;
+  function showError(message) {
+    const box = document.getElementById("status");
+    box.textContent = message;
+    box.hidden = false;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { box.hidden = true; }, 8000);
+  }
+
+  // ---------- sign-in ----------
+  async function fetchSession() {
+    const r = await fetch(AUTH + "/get-session", { credentials: "include" });
+    if (!r.ok) return null;
+    const text = await r.text();
+    const data = text ? JSON.parse(text) : null;
+    return data && data.user ? data : null;
+  }
+
+  async function fetchToken() {
+    const r = await fetch(AUTH + "/token", { credentials: "include" });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.token || null;
+  }
+
+  async function signIn() {
+    const r = await fetch(AUTH + "/sign-in/social", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "github", callbackURL: location.href }),
+    });
+    const data = await r.json();
+    if (data.url) location.href = data.url;
+    else showError("Sign-in failed. Please try again.");
+  }
+
+  async function signOut() {
+    await fetch(AUTH + "/sign-out", { method: "POST", credentials: "include" });
+    token = null;
+    location.reload();
+  }
+
+  function showSignedOut() {
+    document.getElementById("header-actions").hidden = true;
+    document.getElementById("app").hidden = true;
+    document.getElementById("signin").hidden = false;
+  }
+
+  function showSignedIn(session) {
+    document.getElementById("who").textContent = session.user.name || session.user.email || "";
+    document.getElementById("header-actions").hidden = false;
+    document.getElementById("signin").hidden = true;
+    document.getElementById("app").hidden = false;
+  }
+
+  // ---------- database calls (Neon Data API) ----------
+  async function api(path, { method = "GET", body, prefer } = {}) {
+    const headers = { Authorization: "Bearer " + token };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (prefer) headers.Prefer = prefer;
+    const r = await fetch(API + path, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) throw new Error(await r.text() || `Request failed (${r.status})`);
+    const text = await r.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  async function loadBoard() {
+    const [columns, labels, issues, links, tasks] = await Promise.all([
+      api("/kanban_columns?select=*&order=position.asc"),
+      api("/kanban_labels?select=*&order=created_at.asc"),
+      api("/kanban_issues?select=*&order=created_at.asc"),
+      api("/kanban_issue_labels?select=*"),
+      api("/kanban_tasks?select=*&order=position.asc"),
+    ]);
+    state = {
+      columns: columns.map((c) => ({ id: c.id, name: c.name, position: c.position })),
+      labels: labels.map((l) => ({ id: l.id, name: l.name, color: l.color })),
+      issues: issues.map((i) => ({
+        id: i.id,
+        title: i.title,
+        body: i.body,
+        columnId: i.column_id,
+        labels: links.filter((x) => x.issue_id === i.id).map((x) => x.label_id),
+        tasks: tasks
+          .filter((t) => t.issue_id === i.id)
+          .map((t) => ({ id: t.id, text: t.text, done: t.done })),
+      })),
+    };
+    render();
+  }
+
+  // Runs a database change, then reloads the board so the screen matches the database.
+  async function run(action) {
+    try {
+      await action();
+      await loadBoard();
+    } catch (err) {
+      showError("Could not save: " + err.message);
+      await loadBoard().catch(() => {});
+    }
+  }
 
   // ---------- render ----------
   function renderFilters() {
@@ -411,13 +486,13 @@
       <ul class="tasks">
         ${i.tasks.map((t) => `
           <li><label>
-            <input type="checkbox" data-task="${t.id}" data-issue="${i.id}" ${t.done ? "checked" : ""}>
+            <input type="checkbox" data-task="${t.id}" ${t.done ? "checked" : ""}>
             <span class="${t.done ? "done" : ""}">${esc(t.text)}</span>
           </label></li>`).join("")}
       </ul>
       <div class="progress">${done}/${total} done</div>` : "";
     const moveOptions = state.columns.map((c) =>
-      `<option value="${c.id}" ${c.id === i.status ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+      `<option value="${c.id}" ${c.id === i.columnId ? "selected" : ""}>${esc(c.name)}</option>`).join("");
     return `
       <article class="card" draggable="true" data-id="${i.id}">
         <div>${tags}</div>
@@ -436,10 +511,11 @@
     const visible = state.issues.filter((i) =>
       filter.size === 0 || i.labels.some((id) => filter.has(id)));
     const columns = state.columns.map((col) => {
-      const items = visible.filter((i) => i.status === col.id);
+      const items = visible.filter((i) => i.columnId === col.id);
       return `
-        <section class="column" data-status="${col.id}">
+        <section class="column" data-column="${col.id}">
           <div class="column-head">
+            <span class="col-handle" title="Drag to move column">⋮⋮</span>
             <input type="text" data-col="${col.id}" value="${esc(col.name)}" aria-label="Column name">
             <span class="count">${items.length}</span>
             <button class="small danger" data-action="del-col" data-col="${col.id}" title="Delete column">✕</button>
@@ -460,8 +536,11 @@
   function addColumn() {
     const name = prompt("Column name?");
     if (!name || !name.trim()) return;
-    state.columns.push({ id: uid(), name: name.trim() });
-    save(); render();
+    run(() => api("/kanban_columns", {
+      method: "POST",
+      body: { name: name.trim(), position: state.columns.length },
+      prefer: "return=minimal",
+    }));
   }
 
   function deleteColumn(id) {
@@ -472,22 +551,35 @@
       return;
     }
     const others = state.columns.filter((c) => c.id !== id);
-    const moving = state.issues.filter((i) => i.status === id);
+    const moving = state.issues.filter((i) => i.columnId === id);
     const msg = moving.length
       ? `Delete "${col.name}"? Its ${moving.length} issue(s) will move to "${others[0].name}".`
       : `Delete "${col.name}"?`;
     if (!confirm(msg)) return;
-    moving.forEach((i) => { i.status = others[0].id; });
-    state.columns = others;
-    save(); render();
+    run(async () => {
+      if (moving.length) {
+        await api(`/kanban_issues?column_id=eq.${id}`, { method: "PATCH", body: { column_id: others[0].id } });
+      }
+      await api(`/kanban_columns?id=eq.${id}`, { method: "DELETE" });
+    });
   }
 
   function renameColumn(id, name) {
-    const col = columnById(id);
-    if (!col) return;
     const clean = name.trim();
-    if (clean) col.name = clean;
-    save(); render();
+    if (!clean) return render();
+    run(() => api(`/kanban_columns?id=eq.${id}`, { method: "PATCH", body: { name: clean } }));
+  }
+
+  // Move a column to just before or after another column, then save the new positions.
+  function moveColumn(fromId, toId, after) {
+    if (fromId === toId) return;
+    const moved = columnById(fromId);
+    const order = state.columns.filter((c) => c.id !== fromId);
+    const idx = order.findIndex((c) => c.id === toId);
+    order.splice(idx + (after ? 1 : 0), 0, moved);
+    run(() => Promise.all(order.map((c, i) =>
+      c.position === i ? null : api(`/kanban_columns?id=eq.${c.id}`, { method: "PATCH", body: { position: i } })
+    )));
   }
 
   // ---------- board interactions ----------
@@ -504,8 +596,7 @@
     if (!issue) return;
     if (action === "edit") openIssue(issue.id);
     if (action === "delete" && confirm(`Delete "${issue.title}"?`)) {
-      state.issues = state.issues.filter((i) => i.id !== issue.id);
-      save(); render();
+      run(() => api(`/kanban_issues?id=eq.${issue.id}`, { method: "DELETE" }));
     }
   });
 
@@ -518,19 +609,18 @@
     }
 
     if (target.matches("select[data-move]")) {
-      const issue = issueById(target.dataset.move);
-      if (!issue) return;
-      issue.status = target.value;
-      save(); render();
+      run(() => api(`/kanban_issues?id=eq.${target.dataset.move}`, {
+        method: "PATCH",
+        body: { column_id: target.value },
+      }));
       return;
     }
 
     if (target.matches("input[data-task]")) {
-      const issue = issueById(target.dataset.issue);
-      const task = issue && issue.tasks.find((t) => t.id === target.dataset.task);
-      if (!task) return;
-      task.done = target.checked;
-      save(); renderBoard();
+      run(() => api(`/kanban_tasks?id=eq.${target.dataset.task}`, {
+        method: "PATCH",
+        body: { done: target.checked },
+      }));
     }
   });
 
@@ -539,17 +629,34 @@
     if (card && !e.target.closest("button, input, label, select")) openIssue(card.dataset.id);
   });
 
-  // drag and drop between columns
+  // Drag issues between columns, or drag a column by its ⋮⋮ handle to reorder.
+  // A column is only draggable while its handle is held, so text in its name stays selectable.
+  board.addEventListener("mousedown", (e) => {
+    const handle = e.target.closest(".col-handle");
+    if (handle) handle.closest(".column").draggable = true;
+  });
+  document.addEventListener("mouseup", () => {
+    document.querySelectorAll(".column[draggable='true']").forEach((c) => { c.draggable = false; });
+  });
+
   board.addEventListener("dragstart", (e) => {
+    if (e.target.matches(".column")) {
+      dragKind = "column";
+      dragColumnId = e.target.dataset.column;
+      e.dataTransfer.setData("text/plain", dragColumnId);
+      e.dataTransfer.effectAllowed = "move";
+      return;
+    }
     const card = e.target.closest(".card");
     if (!card) return;
+    dragKind = "issue";
     dragId = card.dataset.id;
     e.dataTransfer.setData("text/plain", dragId);
     e.dataTransfer.effectAllowed = "move";
   });
   board.addEventListener("dragover", (e) => {
     const column = e.target.closest(".column");
-    if (!column || !dragId) return;
+    if (!column || !dragKind) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     document.querySelectorAll(".column.over").forEach((c) => {
@@ -563,15 +670,20 @@
   });
   board.addEventListener("drop", (e) => {
     const column = e.target.closest(".column");
-    const issue = issueById(dragId);
-    if (!column || !issue) return;
+    if (!column || !dragKind) return;
     e.preventDefault();
-    issue.status = column.dataset.status;
-    dragId = null;
-    save(); render();
+    if (dragKind === "issue") {
+      const issueId = dragId;
+      const columnId = column.dataset.column;
+      run(() => api(`/kanban_issues?id=eq.${issueId}`, { method: "PATCH", body: { column_id: columnId } }));
+    } else {
+      const rect = column.getBoundingClientRect();
+      moveColumn(dragColumnId, column.dataset.column, e.clientX > rect.left + rect.width / 2);
+    }
+    dragKind = null; dragId = null; dragColumnId = null;
   });
   board.addEventListener("dragend", () => {
-    dragId = null;
+    dragKind = null; dragId = null; dragColumnId = null;
     document.querySelectorAll(".column.over").forEach((c) => c.classList.remove("over"));
   });
 
@@ -617,7 +729,7 @@
     renderTaskEditor();
   });
   document.getElementById("btn-add-task").addEventListener("click", () => {
-    draftTasks.push({ id: uid(), text: "", done: false });
+    draftTasks.push({ id: null, text: "", done: false });
     renderTaskEditor();
     fTasks.querySelector(".task-row:last-child input[type=text]").focus();
   });
@@ -627,34 +739,42 @@
       <label>
         <input type="checkbox" value="${l.id}" ${selected.includes(l.id) ? "checked" : ""}>
         <span class="tag" style="background:${esc(l.color)}; margin:0">${esc(l.name)}</span>
-      </label>`).join("") || `<span class="hint">No labels yet. Add some via "Labels".</span>`;
+      </label>`).join("") || `<span class="hint">No labels yet. Add some below.</span>`;
   }
 
   // Create a label without leaving the issue dialog, and tick it for this issue.
   const fNewLabel = document.getElementById("f-new-label");
-  function addInlineLabel() {
+  async function addInlineLabel() {
     const name = fNewLabel.value.trim();
     if (!name) return;
-    const id = uid();
     const selected = [...fLabels.querySelectorAll("input:checked")].map((b) => b.value);
-    state.labels.push({ id, name, color: document.getElementById("f-new-label-color").value });
-    save();
-    fNewLabel.value = "";
-    renderLabelChecks([...selected, id]);
-    renderFilters();
+    const color = document.getElementById("f-new-label-color").value;
+    try {
+      const [row] = await api("/kanban_labels", {
+        method: "POST",
+        body: { name, color },
+        prefer: "return=representation",
+      });
+      fNewLabel.value = "";
+      state.labels.push({ id: row.id, name: row.name, color: row.color });
+      renderLabelChecks([...selected, row.id]);
+      renderFilters();
+    } catch (err) {
+      showError("Could not add label: " + err.message);
+    }
   }
   document.getElementById("btn-add-label-inline").addEventListener("click", addInlineLabel);
   fNewLabel.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); addInlineLabel(); } // don't submit the issue form
   });
 
-  function openIssue(id, presetStatus) {
+  function openIssue(id, presetColumn) {
     const issue = id ? issueById(id) : null;
     editingId = issue ? issue.id : null;
     document.getElementById("issue-dialog-title").textContent = issue ? "Edit issue" : "New issue";
     fTitle.value = issue ? issue.title : "";
     fStatus.innerHTML = state.columns.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-    fStatus.value = issue ? issue.status : (presetStatus || state.columns[0].id);
+    fStatus.value = issue ? issue.columnId : (presetColumn || state.columns[0].id);
     fBody.value = issue ? issue.body : "";
     draftTasks = issue ? issue.tasks.map((t) => ({ ...t })) : [];
     renderLabelChecks(issue ? issue.labels : []);
@@ -663,28 +783,60 @@
     fTitle.focus();
   }
 
+  async function saveIssue(issueId, data) {
+    let id = issueId;
+    if (id) {
+      await api(`/kanban_issues?id=eq.${id}`, {
+        method: "PATCH",
+        body: { title: data.title, body: data.body, column_id: data.columnId, updated_at: new Date().toISOString() },
+      });
+    } else {
+      const [row] = await api("/kanban_issues", {
+        method: "POST",
+        body: { title: data.title, body: data.body, column_id: data.columnId },
+        prefer: "return=representation",
+      });
+      id = row.id;
+    }
+
+    // Replace the label links and checklist items with the current form contents.
+    await api(`/kanban_issue_labels?issue_id=eq.${id}`, { method: "DELETE" });
+    if (data.labels.length) {
+      await api("/kanban_issue_labels", {
+        method: "POST",
+        body: data.labels.map((label_id) => ({ issue_id: id, label_id })),
+        prefer: "return=minimal",
+      });
+    }
+    await api(`/kanban_tasks?issue_id=eq.${id}`, { method: "DELETE" });
+    if (data.tasks.length) {
+      await api("/kanban_tasks", {
+        method: "POST",
+        body: data.tasks.map((t, i) => ({ issue_id: id, text: t.text, done: t.done, position: i })),
+        prefer: "return=minimal",
+      });
+    }
+  }
+
   document.getElementById("btn-new").addEventListener("click", () => openIssue(null));
   document.getElementById("btn-cancel").addEventListener("click", () => issueDialog.close());
 
   document.getElementById("issue-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!fTitle.value.trim()) return;
-    const labels = [...fLabels.querySelectorAll("input:checked")].map((b) => b.value);
-    const tasks = draftTasks
-      .filter((t) => t.text.trim())
-      .map((t) => ({ id: t.id, text: t.text.trim(), done: !!t.done }));
+    const title = fTitle.value.trim();
+    if (!title) return;
     const data = {
-      title: fTitle.value.trim(),
-      status: fStatus.value,
+      title,
+      columnId: fStatus.value,
       body: fBody.value.trim(),
-      labels,
-      tasks,
+      labels: [...fLabels.querySelectorAll("input:checked")].map((b) => b.value),
+      tasks: draftTasks
+        .filter((t) => t.text.trim())
+        .map((t) => ({ text: t.text.trim(), done: !!t.done })),
     };
-    if (editingId) Object.assign(issueById(editingId), data);
-    else state.issues.push({ id: uid(), ...data });
-    save();
+    const issueId = editingId;
     issueDialog.close();
-    render();
+    run(() => saveIssue(issueId, data));
   });
 
   // ---------- labels dialog ----------
@@ -700,13 +852,14 @@
       </div>`).join("") || `<p class="hint">No labels yet.</p>`;
   }
 
-  labelsList.addEventListener("input", (e) => {
+  // Saved when the field loses focus or the color is picked, not on every keystroke.
+  labelsList.addEventListener("change", (e) => {
     const row = e.target.closest(".label-row");
-    const label = row && labelById(row.dataset.id);
-    if (!label) return;
-    label[e.target.dataset.field] = e.target.value;
-    save();
-    renderFilters(); renderBoard();
+    const field = e.target.dataset.field;
+    if (!row || !field) return;
+    const value = e.target.value.trim();
+    if (field === "name" && !value) return renderLabelsList();
+    run(() => api(`/kanban_labels?id=eq.${row.dataset.id}`, { method: "PATCH", body: { [field]: value } }));
   });
 
   labelsList.addEventListener("click", (e) => {
@@ -714,23 +867,17 @@
     if (!btn) return;
     const label = labelById(btn.dataset.delete);
     if (!label || !confirm(`Delete label "${label.name}"? It will be removed from all issues.`)) return;
-    state.labels = state.labels.filter((l) => l.id !== label.id);
-    state.issues.forEach((i) => { i.labels = i.labels.filter((id) => id !== label.id); });
     filter.delete(label.id);
-    save(); renderLabelsList(); render();
+    run(() => api(`/kanban_labels?id=eq.${label.id}`, { method: "DELETE" }));
   });
 
   document.getElementById("label-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const name = document.getElementById("new-label-name").value.trim();
     if (!name) return;
-    state.labels.push({
-      id: uid(),
-      name,
-      color: document.getElementById("new-label-color").value,
-    });
+    const color = document.getElementById("new-label-color").value;
     document.getElementById("new-label-name").value = "";
-    save(); renderLabelsList(); render();
+    run(() => api("/kanban_labels", { method: "POST", body: { name, color }, prefer: "return=minimal" }));
   });
 
   document.getElementById("btn-labels").addEventListener("click", () => {
@@ -739,38 +886,41 @@
   });
   document.getElementById("btn-labels-close").addEventListener("click", () => labelsDialog.close());
 
-  // ---------- export / import ----------
-  document.getElementById("btn-export").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "planning-kanban.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
+  // ---------- sign-in buttons ----------
+  document.getElementById("btn-signin").addEventListener("click", signIn);
+  document.getElementById("btn-signout").addEventListener("click", signOut);
 
-  const fileImport = document.getElementById("file-import");
-  document.getElementById("btn-import").addEventListener("click", () => fileImport.click());
-  fileImport.addEventListener("change", async () => {
-    const file = fileImport.files[0];
-    if (!file) return;
-    let data = null;
+  // ---------- start ----------
+  async function start() {
     try {
-      data = normalize(JSON.parse(await file.text()));
-    } catch (err) {
-      data = null;
-    }
-    if (data) {
-      state = data;
-      filter.clear();
-      save(); render();
-    } else {
-      alert("That file is not a valid planning kanban export.");
-    }
-    fileImport.value = "";
-  });
+      const session = await fetchSession();
+      if (!session) return showSignedOut();
 
-  render();
+      token = await fetchToken();
+      if (!token) {
+        showError("Could not get an access token. Try signing in again.");
+        return showSignedOut();
+      }
+      showSignedIn(session);
+      setInterval(async () => { token = (await fetchToken()) || token; }, 10 * 60 * 1000);
+
+      // First use: create the default columns in an empty database.
+      const existing = await api("/kanban_columns?select=id");
+      if (existing.length === 0) {
+        await api("/kanban_columns", {
+          method: "POST",
+          body: DEFAULT_COLUMNS.map((name, position) => ({ name, position })),
+          prefer: "return=minimal",
+        });
+      }
+      await loadBoard();
+    } catch (err) {
+      showError("Something went wrong: " + err.message);
+      showSignedOut();
+    }
+  }
+
+  start();
 })();
 </script>
 </body>
