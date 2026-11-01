@@ -17,5 +17,5 @@ routes = [
 
 [vars]
 # Public values. The Client ID is not a secret.
-GITHUB_CLIENT_ID = "REPLACE_WITH_CLIENT_ID"
+GITHUB_CLIENT_ID = "Ov23liHASYqCuxE4Zp6y"
 ALLOWED_GITHUB_IDS = "163969570"
