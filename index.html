@@ -368,38 +368,20 @@
     statusTimer = setTimeout(() => { box.hidden = true; }, 8000);
   }
 
-  // ---------- sign-in ----------
-  async function fetchSession() {
-    const r = await fetch(AUTH + "/get-session", { credentials: "include" });
-    if (!r.ok) return null;
-    const text = await r.text();
-    const data = text ? JSON.parse(text) : null;
-    return data && data.user ? data : null;
-  }
-
+  // ---------- sign-in (GitHub, through the planning.tektek.fi Worker) ----------
+  // The Worker keeps the session in a cookie on this domain and returns a short-lived token.
   async function fetchToken() {
-    const r = await fetch(AUTH + "/token", { credentials: "include" });
+    const r = await fetch("/auth/token", { credentials: "same-origin", cache: "no-store" });
     if (!r.ok) return null;
-    const data = await r.json();
-    return data.token || null;
+    return r.json(); // { token, login }
   }
 
-  async function signIn() {
-    const r = await fetch(AUTH + "/sign-in/social", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider: "github", callbackURL: location.href }),
-    });
-    const data = await r.json();
-    if (data.url) location.href = data.url;
-    else showError("Sign-in failed. Please try again.");
+  function signIn() {
+    location.href = "/auth/login";
   }
 
-  async function signOut() {
-    await fetch(AUTH + "/sign-out", { method: "POST", credentials: "include" });
-    token = null;
-    location.reload();
+  function signOut() {
+    location.href = "/auth/logout";
   }
 
   function showSignedOut() {
@@ -408,8 +390,8 @@
     document.getElementById("signin").hidden = false;
   }
 
-  function showSignedIn(session) {
-    document.getElementById("who").textContent = session.user.name || session.user.email || "";
+  function showSignedIn(login) {
+    document.getElementById("who").textContent = login || "";
     document.getElementById("header-actions").hidden = false;
     document.getElementById("signin").hidden = true;
     document.getElementById("app").hidden = false;
@@ -894,16 +876,15 @@
   // ---------- start ----------
   async function start() {
     try {
-      const session = await fetchSession();
+      const session = await fetchToken();
       if (!session) return showSignedOut();
 
-      token = await fetchToken();
-      if (!token) {
-        showError("Could not get an access token. Try signing in again.");
-        return showSignedOut();
-      }
-      showSignedIn(session);
-      setInterval(async () => { token = (await fetchToken()) || token; }, 10 * 60 * 1000);
+      token = session.token;
+      showSignedIn(session.login);
+      setInterval(async () => {
+        const fresh = await fetchToken();
+        if (fresh) token = fresh.token;
+      }, 10 * 60 * 1000);
 
       // First use: create the default columns in an empty database.
       const existing = await api("/kanban_columns?select=id");
