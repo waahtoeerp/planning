@@ -57,3 +57,23 @@ delete from kanban_members where github_id = 'THEIR_ID_HERE';
 
 - **Sign-in loops back to the sign-in button:** the browser is blocking the sign-in cookie. Try Chrome or Firefox, or allow third-party cookies for this site.
 - **"Could not save" or the board is empty after signing in:** the account is not in `kanban_members`. Add it as described above.
+
+## Sign-in Worker (planning.tektek.fi)
+
+The Worker in `worker/worker.js` serves the page, signs users in with GitHub, and issues tokens for the database. Its settings are in `wrangler.toml`.
+
+Deploy from this folder:
+
+```bash
+npx wrangler login          # once, opens a browser to sign in to Cloudflare
+npx wrangler deploy         # publishes worker/worker.js with wrangler.toml
+```
+
+Secrets are set once and never committed:
+
+```bash
+npx wrangler secret put GITHUB_CLIENT_SECRET
+npx wrangler secret put JWT_PRIVATE_KEY
+```
+
+Change `GITHUB_CLIENT_ID` or `ALLOWED_GITHUB_IDS` in `wrangler.toml`, then run `npx wrangler deploy`.

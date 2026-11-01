@@ -1,0 +1,21 @@
+# Cloudflare Worker for planning.tektek.fi (sign-in and page proxy).
+# Deploy with: npx wrangler deploy
+#
+# Secrets are NOT in this file. Set them once with:
+#   npx wrangler secret put GITHUB_CLIENT_SECRET
+#   npx wrangler secret put JWT_PRIVATE_KEY
+# (paste the value when asked; never commit it)
+
+name = "planning-proxy"
+main = "worker/worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+routes = [
+  { pattern = "planning.tektek.fi", custom_domain = true }
+]
+
+[vars]
+# Public values. The Client ID is not a secret.
+GITHUB_CLIENT_ID = "REPLACE_WITH_CLIENT_ID"
+ALLOWED_GITHUB_IDS = "163969570"
