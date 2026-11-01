@@ -335,7 +335,8 @@
 <script>
 (() => {
   // Neon Auth (sign-in) and Neon Data API (storage) for the tektek project.
-  const AUTH = "https://ep-silent-shadow-b9rx4q0d.neonauth.c-7.eu-central-1.aws.neon.tech/neondb/auth";
+  // Same-site path, forwarded to Neon Auth by the planning-proxy Worker.
+  const AUTH = "/auth";
   const API = "https://ep-silent-shadow-b9rx4q0d.apirest.c-7.eu-central-1.aws.neon.tech/neondb/rest/v1";
   const DEFAULT_COLUMNS = ["Backlog", "In progress", "In review", "Ready"];
 
